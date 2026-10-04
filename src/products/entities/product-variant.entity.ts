@@ -8,6 +8,7 @@ import {
     ManyToOne,
     OneToMany,
     PrimaryGeneratedColumn,
+    type Relation,
     Unique,
     UpdateDateColumn,
 } from 'typeorm';
@@ -50,7 +51,7 @@ export class ProductVariant {
     @JoinColumn({
         name: 'product_id',
     })
-    product: Product;
+    product: Relation<Product>;
 
     @Column({
         name: 'size_id',
@@ -64,7 +65,7 @@ export class ProductVariant {
     @JoinColumn({
         name: 'size_id',
     })
-    size: Size;
+    size: Relation<Size>;
 
     @Column({
         name: 'color_id',
@@ -78,7 +79,7 @@ export class ProductVariant {
     @JoinColumn({
         name: 'color_id',
     })
-    color: Color;
+    color: Relation<Color>;
 
     @Column({
         type: 'varchar',
@@ -127,13 +128,13 @@ export class ProductVariant {
     updatedAt: Date;
 
     @OneToMany(() => OrderItem, (orderItem) => orderItem.productVariant)
-    orderItems: OrderItem[];
+    orderItems: Relation<OrderItem>[];
 
     @OneToMany(
         () => InventoryMovement,
         (movement) => movement.productVariant,
     )
-    inventoryMovements: InventoryMovement[];
+    inventoryMovements: Relation<InventoryMovement>[];
 
     @Column({
         name: 'reserved_stock',

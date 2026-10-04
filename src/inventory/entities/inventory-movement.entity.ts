@@ -6,6 +6,7 @@ import {
     JoinColumn,
     ManyToOne,
     PrimaryGeneratedColumn,
+    type Relation,
 } from 'typeorm';
 
 import { ProductVariant } from '../../products/entities/product-variant.entity.js';
@@ -42,7 +43,7 @@ export class InventoryMovement {
     @JoinColumn({
         name: 'product_variant_id',
     })
-    productVariant: ProductVariant;
+    productVariant: Relation<ProductVariant>;
 
     @Column({
         type: 'enum',
@@ -81,7 +82,7 @@ export class InventoryMovement {
     @JoinColumn({
         name: 'user_id',
     })
-    user: User | null;
+    user: Relation<User> | null;
 
     @Column({
         type: 'text',

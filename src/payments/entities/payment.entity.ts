@@ -6,6 +6,7 @@ import {
     JoinColumn,
     ManyToOne,
     PrimaryGeneratedColumn,
+    type Relation,
     UpdateDateColumn,
 } from 'typeorm';
 
@@ -45,7 +46,7 @@ export class Payment {
     @JoinColumn({
         name: 'order_id',
     })
-    order: Order;
+    order: Relation<Order>;
 
     @Column({
         type: 'enum',

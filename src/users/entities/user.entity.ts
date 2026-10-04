@@ -4,6 +4,7 @@ import {
     Entity,
     OneToMany,
     PrimaryGeneratedColumn,
+    type Relation,
     UpdateDateColumn,
 } from 'typeorm';
 
@@ -76,14 +77,14 @@ export class User {
     updatedAt: Date;
 
     @OneToMany(() => Address, (address) => address.user)
-    addresses: Address[];
+    addresses: Relation<Address>[];
 
     @OneToMany(() => Order, (order) => order.user)
-    orders: Order[];
+    orders: Relation<Order>[];
 
     @OneToMany(
         () => InventoryMovement,
         (movement) => movement.user,
     )
-    inventoryMovements: InventoryMovement[];
+    inventoryMovements: Relation<InventoryMovement>[];
 }

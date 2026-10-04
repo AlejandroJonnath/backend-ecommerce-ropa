@@ -7,6 +7,7 @@ import {
     ManyToOne,
     OneToMany,
     PrimaryGeneratedColumn,
+    type Relation,
     UpdateDateColumn,
 } from 'typeorm';
 
@@ -43,7 +44,7 @@ export class Order {
     @JoinColumn({
         name: 'user_id',
     })
-    user: User;
+    user: Relation<User>;
 
     @Column({
         type: 'enum',
@@ -143,10 +144,10 @@ export class Order {
     shippingPostalCode: string | null;
 
     @OneToMany(() => OrderItem, (item) => item.order)
-    items: OrderItem[];
+    items: Relation<OrderItem>[];
 
     @OneToMany(() => Payment, (payment) => payment.order)
-    payments: Payment[];
+    payments: Relation<Payment>[];
 
     @CreateDateColumn({
         name: 'created_at',

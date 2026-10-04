@@ -17,13 +17,11 @@ import { PaymentsModule } from './payments/payments.module.js';
 import { ExpenseCategoriesModule } from './expense-categories/expense-categories.module.js';
 import { ExpensesModule } from './expenses/expenses.module.js';
 import { InventoryModule } from './inventory/inventory.module.js';
+import { AuthModule } from './auth/auth.module.js';
 
 import { AppController } from './app.controller.js';
 
 import { AppService } from './app.service.js';
-
-
-
 
 @Module({
   imports: [
@@ -52,13 +50,12 @@ import { AppService } from './app.service.js';
     SizesModule,
     ColorsModule,
     ProductsModule,
-
     OrdersModule,
     OrderItemsModule,
     PaymentsModule,
     ExpenseCategoriesModule,
     ExpensesModule,
-
+    AuthModule,
     InventoryModule,
   ],
 

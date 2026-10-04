@@ -4,6 +4,7 @@ import {
     Entity,
     OneToMany,
     PrimaryGeneratedColumn,
+    type Relation,
     UpdateDateColumn,
 } from 'typeorm';
 
@@ -41,7 +42,7 @@ export class ExpenseCategory {
     isActive: boolean;
 
     @OneToMany(() => Expense, (expense) => expense.category)
-    expenses: Expense[];
+    expenses: Relation<Expense>[];
 
     @CreateDateColumn({
         name: 'created_at',

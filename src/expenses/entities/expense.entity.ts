@@ -6,6 +6,7 @@ import {
     JoinColumn,
     ManyToOne,
     PrimaryGeneratedColumn,
+    type Relation,
     UpdateDateColumn,
 } from 'typeorm';
 
@@ -31,7 +32,7 @@ export class Expense {
     @JoinColumn({
         name: 'category_id',
     })
-    category: ExpenseCategory;
+    category: Relation<ExpenseCategory>;
 
     @Column({
         type: 'varchar',

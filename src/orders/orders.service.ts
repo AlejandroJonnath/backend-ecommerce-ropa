@@ -9,10 +9,7 @@ import { InventoryService } from '../inventory/inventory.service.js';
 import { Order, OrderStatus } from './entities/order.entity.js';
 import { OrderItem } from '../order-items/entities/order-item.entity.js';
 import { ProductVariant } from '../products/entities/product-variant.entity.js';
-import {
-    CreateOrderDto,
-    CreateOrderItemDto,
-} from './dto/create-order.dto.js';
+import { CreateOrderDto, CreateOrderItemDto, } from './dto/create-order.dto.js';
 
 @Injectable()
 export class OrdersService {
@@ -31,7 +28,12 @@ export class OrdersService {
             );
         }
 
-        const items = this.mergeDuplicateItems(dto.items);
+        const items = this.mergeDuplicateItems(dto.items)
+            .sort((a, b) =>
+                a.productVariantId.localeCompare(
+                    b.productVariantId,
+                ),
+            );
 
         return this.dataSource.transaction(async (manager) => {
             const variantRepository =

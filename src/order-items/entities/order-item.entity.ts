@@ -6,6 +6,7 @@ import {
     JoinColumn,
     ManyToOne,
     PrimaryGeneratedColumn,
+    type Relation,
     Unique,
 } from 'typeorm';
 
@@ -32,7 +33,7 @@ export class OrderItem {
     @JoinColumn({
         name: 'order_id',
     })
-    order: Order;
+    order: Relation<Order>;
 
     @Column({
         name: 'product_variant_id',
@@ -46,7 +47,7 @@ export class OrderItem {
     @JoinColumn({
         name: 'product_variant_id',
     })
-    productVariant: ProductVariant;
+    productVariant: Relation<ProductVariant>;
 
     @Column({
         type: 'varchar',
