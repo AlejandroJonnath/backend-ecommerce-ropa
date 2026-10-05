@@ -4,37 +4,33 @@ import { JwtModule, } from '@nestjs/jwt';
 import { PassportModule, } from '@nestjs/passport';
 import { TypeOrmModule, } from '@nestjs/typeorm';
 import { User, } from '../users/entities/user.entity.js';
+import { RefreshToken, } from './entities/refresh-token.entity.js';
 import { AuthController, } from './auth.controller.js';
 import { AuthService, } from './auth.service.js';
 import { JwtStrategy, } from './strategies/jwt.strategy.js';
-import { RolesGuard } from './guards/roles.guard.js';
+import { RolesGuard, } from './guards/roles.guard.js';
 
 @Module({
+
     imports: [
-        TypeOrmModule.forFeature([
-            User,
-        ]),
+
+        TypeOrmModule.forFeature([User, RefreshToken,]),
 
         PassportModule,
 
         JwtModule.registerAsync({
-            imports: [
-                ConfigModule,
-            ],
 
-            inject: [
-                ConfigService,
-            ],
+            imports: [ConfigModule,],
 
-            useFactory: (
-                configService: ConfigService,
-            ) => ({
+            inject: [ConfigService,],
+
+            useFactory: (configService: ConfigService,) => ({
+
                 secret:
-                    configService.getOrThrow<string>(
-                        'JWT_SECRET',
-                    ),
+                    configService.getOrThrow<string>('JWT_SECRET',),
 
                 signOptions: {
+
                     expiresIn:
                         configService.get<string>(
                             'JWT_EXPIRES_IN',
@@ -45,19 +41,10 @@ import { RolesGuard } from './guards/roles.guard.js';
         }),
     ],
 
-    controllers: [
-        AuthController,
-    ],
+    controllers: [AuthController,],
 
-    providers: [
-        AuthService,
-        JwtStrategy,
-        RolesGuard
-    ],
+    providers: [AuthService, JwtStrategy, RolesGuard,],
 
-    exports: [
-        AuthService,
-        RolesGuard,
-    ],
+    exports: [AuthService, RolesGuard,],
 })
 export class AuthModule { }
