@@ -2,15 +2,19 @@ import {
     Column,
     CreateDateColumn,
     Entity,
+    Index,
     OneToMany,
     PrimaryGeneratedColumn,
-    type Relation,
     UpdateDateColumn,
 } from 'typeorm';
 
 import { Product } from '../../products/entities/product.entity.js';
 
 @Entity('categories')
+@Index(
+    'idx_categories_active_name',
+    ['isActive', 'name'],
+)
 export class Category {
     @PrimaryGeneratedColumn('uuid')
     id: string;
@@ -48,8 +52,11 @@ export class Category {
     })
     isActive: boolean;
 
-    @OneToMany(() => Product, (product) => product.category)
-    products: Relation<Product>[];
+    @OneToMany(
+        () => Product,
+        (product) => product.category,
+    )
+    products: Product[];
 
     @CreateDateColumn({
         name: 'created_at',
