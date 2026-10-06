@@ -1,9 +1,17 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from "@nestjs/common";
-import { Reflector } from "@nestjs/core";
-import { UserRole } from "../../users/entities/user.entity.js";
-import { ROLES_KEY } from "../decorators/roles.decorator.js";
-import { JwtPayload } from "../types/jwt-payload.type.js";
-import { Observable } from "rxjs";
+import {
+    CanActivate,
+    ExecutionContext,
+    ForbiddenException,
+    Injectable,
+} from '@nestjs/common';
+
+import { Reflector } from '@nestjs/core';
+
+import { UserRole } from '../../users/entities/user.entity.js';
+
+import { ROLES_KEY } from '../decorators/roles.decorator.js';
+
+import { JwtPayload } from '../types/jwt-payload.type.js';
 
 @Injectable()
 export class RolesGuard
@@ -15,6 +23,10 @@ export class RolesGuard
     canActivate(
         context: ExecutionContext,
     ): boolean {
+        /**
+         * Obtiene los roles requeridos
+         * por el endpoint.
+         */
         const requiredRoles =
             this.reflector.getAllAndOverride<
                 UserRole[]
@@ -23,18 +35,28 @@ export class RolesGuard
                 context.getClass(),
             ]);
 
-        /*
-         * Si el endpoint no especifica roles,
-         * cualquier usuario autenticado puede continuar.
+        /**
+         * Si el endpoint no requiere
+         * ningún rol específico,
+         * permitimos continuar.
+         *
+         * La autenticación se controla
+         * mediante JwtAuthGuard.
          */
         if (!requiredRoles?.length) {
             return true;
         }
 
+        /**
+         * Obtenemos el usuario que Passport
+         * colocó después de validar el JWT.
+         */
         const request =
-            context.switchToHttp().getRequest<{
-                user: JwtPayload;
-            }>();
+            context
+                .switchToHttp()
+                .getRequest<{
+                    user: JwtPayload;
+                }>();
 
         const user =
             request.user;
@@ -45,6 +67,10 @@ export class RolesGuard
             );
         }
 
+        /**
+         * Comprobamos si el rol del usuario
+         * está dentro de los roles permitidos.
+         */
         if (
             !requiredRoles.includes(
                 user.role,

@@ -9,17 +9,18 @@ import {
 import { Request } from 'express';
 
 import { CreateOrderDto } from './dto/create-order.dto.js';
+
 import { OrdersService } from './orders.service.js';
 
-import { JwtAuthGuard, } from '../auth/guards/jwt-auth.guard.js';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 
-import { RolesGuard, } from '../auth/guards/roles.guard.js';
+import { RolesGuard } from '../auth/guards/roles.guard.js';
 
-import { Roles, } from '../auth/decorators/roles.decorator.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
 
-import { JwtPayload, } from '../auth/types/jwt-payload.type.js';
+import { JwtPayload } from '../auth/types/jwt-payload.type.js';
 
-import { UserRole, } from '../users/entities/user.entity.js';
+import { UserRole } from '../users/entities/user.entity.js';
 
 type AuthenticatedRequest =
     Request & {
@@ -32,11 +33,21 @@ export class OrdersController {
         private readonly ordersService: OrdersService,
     ) { }
 
+    /**
+     * Crea un pedido para el usuario autenticado.
+     *
+     * El userId NO viene del cliente.
+     *
+     * Se obtiene directamente del JWT.
+     */
     @Post()
     @UseGuards(JwtAuthGuard)
     async createOrder(
-        @Req() request: AuthenticatedRequest,
-        @Body() dto: CreateOrderDto,
+        @Req()
+        request: AuthenticatedRequest,
+
+        @Body()
+        dto: CreateOrderDto,
     ) {
         const userId =
             request.user.sub;
@@ -47,6 +58,13 @@ export class OrdersController {
         );
     }
 
+    /**
+     * Endpoint temporal para comprobar
+     * que el sistema de roles funciona.
+     *
+     * Posteriormente será reemplazado
+     * por los endpoints administrativos reales.
+     */
     @Post('admin-test')
     @UseGuards(
         JwtAuthGuard,

@@ -3,9 +3,11 @@ import {
     Injectable,
     NotFoundException,
 } from '@nestjs/common';
+
 import { EntityManager } from 'typeorm';
 
 import { ProductVariant } from '../products/entities/product-variant.entity.js';
+
 import {
     InventoryMovement,
     InventoryMovementType,
@@ -14,9 +16,11 @@ import {
 @Injectable()
 export class InventoryService {
     /**
-     * Reserva stock utilizando su propia transacción.
+     * Reserva stock utilizando un bloqueo pesimista
+     * dentro de la transacción proporcionada.
      *
-     * Útil cuando la reserva es una operación independiente.
+     * Esta función es útil cuando la reserva
+     * se realiza como una operación independiente.
      */
     async reserveStock(
         manager: EntityManager,
@@ -30,13 +34,18 @@ export class InventoryService {
             productVariantId,
         );
 
-        this.reserveStockFromVariant(variant, quantity);
+        this.reserveLockedVariant(
+            variant,
+            quantity,
+        );
 
-        await manager.getRepository(ProductVariant).save(variant);
+        await manager
+            .getRepository(ProductVariant)
+            .save(variant);
     }
 
     /**
-     * Libera stock reservado.
+     * Libera stock que había sido reservado previamente.
      */
     async releaseReservedStock(
         manager: EntityManager,
@@ -60,11 +69,16 @@ export class InventoryService {
 
         variant.reservedStock -= quantity;
 
-        await manager.getRepository(ProductVariant).save(variant);
+        await manager
+            .getRepository(ProductVariant)
+            .save(variant);
     }
 
     /**
      * Confirma una reserva y la convierte en una venta.
+     *
+     * Reduce el stock físico y también elimina
+     * la cantidad previamente reservada.
      */
     async confirmReservedStock(
         manager: EntityManager,
@@ -101,7 +115,9 @@ export class InventoryService {
         variant.stock = stockAfter;
         variant.reservedStock -= quantity;
 
-        await manager.getRepository(ProductVariant).save(variant);
+        await manager
+            .getRepository(ProductVariant)
+            .save(variant);
 
         const movement = manager
             .getRepository(InventoryMovement)
@@ -123,6 +139,8 @@ export class InventoryService {
 
     /**
      * Registra una compra de mercancía.
+     *
+     * Aumenta el stock físico.
      */
     async registerPurchase(
         manager: EntityManager,
@@ -144,7 +162,9 @@ export class InventoryService {
 
         variant.stock = stockAfter;
 
-        await manager.getRepository(ProductVariant).save(variant);
+        await manager
+            .getRepository(ProductVariant)
+            .save(variant);
 
         const movement = manager
             .getRepository(InventoryMovement)
@@ -165,7 +185,9 @@ export class InventoryService {
     }
 
     /**
-     * Registra una devolución.
+     * Registra una devolución de mercancía.
+     *
+     * Aumenta el stock físico.
      */
     async registerReturn(
         manager: EntityManager,
@@ -187,7 +209,9 @@ export class InventoryService {
 
         variant.stock = stockAfter;
 
-        await manager.getRepository(ProductVariant).save(variant);
+        await manager
+            .getRepository(ProductVariant)
+            .save(variant);
 
         const movement = manager
             .getRepository(InventoryMovement)
@@ -209,6 +233,10 @@ export class InventoryService {
 
     /**
      * Registra mercancía dañada.
+     *
+     * El stock disponible se calcula como:
+     *
+     * stock físico - stock reservado
      */
     async registerDamage(
         manager: EntityManager,
@@ -240,7 +268,9 @@ export class InventoryService {
 
         variant.stock = stockAfter;
 
-        await manager.getRepository(ProductVariant).save(variant);
+        await manager
+            .getRepository(ProductVariant)
+            .save(variant);
 
         const movement = manager
             .getRepository(InventoryMovement)
@@ -261,13 +291,19 @@ export class InventoryService {
     }
 
     /**
-     * Aplica una reserva sobre una variante que ya fue bloqueada
-     * dentro de la transacción actual.
+     * Reserva una cantidad sobre una variante
+     * que YA fue bloqueada dentro de la transacción actual.
+     *
+     * Importante:
+     * Este método NO vuelve a consultar ni bloquear
+     * la variante en la base de datos.
      */
-    private reserveStockFromVariant(
+    reserveLockedVariant(
         variant: ProductVariant,
         quantity: number,
     ): void {
+        this.validateQuantity(quantity);
+
         const availableStock =
             variant.stock - variant.reservedStock;
 
@@ -283,7 +319,8 @@ export class InventoryService {
     }
 
     /**
-     * Obtiene una variante utilizando un bloqueo pesimista.
+     * Obtiene una variante utilizando un bloqueo
+     * pesimista de escritura.
      */
     private async getLockedVariant(
         manager: EntityManager,
@@ -311,8 +348,13 @@ export class InventoryService {
     /**
      * Valida cantidades de inventario.
      */
-    private validateQuantity(quantity: number): void {
-        if (!Number.isInteger(quantity) || quantity <= 0) {
+    private validateQuantity(
+        quantity: number,
+    ): void {
+        if (
+            !Number.isInteger(quantity) ||
+            quantity <= 0
+        ) {
             throw new BadRequestException(
                 'La cantidad debe ser un número entero mayor que 0.',
             );

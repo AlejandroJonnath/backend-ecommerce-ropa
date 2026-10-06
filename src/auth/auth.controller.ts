@@ -1,45 +1,115 @@
-import { Body, Controller, Post, } from '@nestjs/common';
-import { AuthService, } from './auth.service.js';
-import { LoginDto, } from './dto/login.dto.js';
-import { RegisterDto, } from './dto/register.dto.js';
-import { RefreshTokenDto, } from './dto/refresh-token.dto.js';
-import { LogoutDto, } from './dto/logout.dto.js';
+import {
+    Body,
+    Controller,
+    Post,
+} from '@nestjs/common';
+
+import { Throttle } from '@nestjs/throttler';
+
+import { AuthService } from './auth.service.js';
+
+import { LoginDto } from './dto/login.dto.js';
+
+import { RegisterDto } from './dto/register.dto.js';
+
+import { RefreshTokenDto } from './dto/refresh-token.dto.js';
+
+import { LogoutDto } from './dto/logout.dto.js';
 
 @Controller('auth')
 export class AuthController {
+    constructor(
+        private readonly authService: AuthService,
+    ) { }
 
-    constructor(private readonly authService: AuthService,) {
-
-    }
-
+    /**
+     * Registro de usuarios.
+     *
+     * Máximo:
+     * 5 solicitudes por minuto.
+     */
     @Post('register')
-    async register(@Body() registerDto: RegisterDto,) {
-
-        return this.authService.register(registerDto,);
-
+    @Throttle({
+        default: {
+            limit: 5,
+            ttl: 60_000,
+        },
+    })
+    async register(
+        @Body()
+        registerDto: RegisterDto,
+    ) {
+        return this.authService.register(
+            registerDto,
+        );
     }
 
+    /**
+     * Login.
+     *
+     * Máximo:
+     * 5 intentos por minuto.
+     *
+     * Esto ayuda a reducir ataques
+     * de fuerza bruta.
+     */
     @Post('login')
-    async login(@Body() loginDto: LoginDto,) {
-
-        return this.authService.login(loginDto,);
-
+    @Throttle({
+        default: {
+            limit: 5,
+            ttl: 60_000,
+        },
+    })
+    async login(
+        @Body()
+        loginDto: LoginDto,
+    ) {
+        return this.authService.login(
+            loginDto,
+        );
     }
 
+    /**
+     * Renovación del access token.
+     */
     @Post('refresh')
-    async refresh(@Body() dto: RefreshTokenDto,) {
-
-        return this.authService.refresh(dto,);
-
+    @Throttle({
+        default: {
+            limit: 10,
+            ttl: 60_000,
+        },
+    })
+    async refresh(
+        @Body()
+        dto: RefreshTokenDto,
+    ) {
+        return this.authService.refresh(
+            dto,
+        );
     }
 
+    /**
+     * Cierra una sesión revocando
+     * el refresh token.
+     */
     @Post('logout')
-    async logout(@Body() dto: LogoutDto,) {
-
-        await this.authService.logout(dto,);
+    @Throttle({
+        default: {
+            limit: 10,
+            ttl: 60_000,
+        },
+    })
+    async logout(
+        @Body()
+        dto: LogoutDto,
+    ) {
+        await this.authService.logout(
+            dto,
+        );
 
         return {
-            message: 'Sesión cerrada correctamente.',
+            message:
+                'Sesión cerrada correctamente.',
         };
     }
 }
