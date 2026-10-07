@@ -1,66 +1,31 @@
-import {
-    Injectable,
-    UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-    PassportStrategy,
-} from '@nestjs/passport';
-import {
-    ExtractJwt,
-    Strategy,
-} from 'passport-jwt';
 
-import {
-    User,
-    UserRole,
-} from '../../users/entities/user.entity.js';
+import { PassportStrategy } from '@nestjs/passport';
+import { ExtractJwt, Strategy } from 'passport-jwt';
 
-import { JwtPayload } from '../types/jwt-payload.type.js';
+import { UserRole } from '../../users/entities/user.entity.js';
+
+export interface JwtPayload {
+    sub: string;
+    email: string;
+    role: UserRole;
+}
 
 @Injectable()
-export class JwtStrategy
-    extends PassportStrategy(Strategy)
-{
+export class JwtStrategy extends PassportStrategy(Strategy) {
     constructor(
-        private readonly configService: ConfigService,
+        configService: ConfigService,
     ) {
         super({
-            jwtFromRequest:
-                ExtractJwt.fromAuthHeaderAsBearerToken(),
-
+            jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
             ignoreExpiration: false,
-
             secretOrKey:
-                configService.getOrThrow<string>(
-                    'JWT_SECRET',
-                ),
+                configService.getOrThrow<string>('JWT_SECRET'),
         });
     }
 
-    async validate(
-        payload: JwtPayload,
-    ) {
-        if (
-            !payload.sub ||
-            !payload.email ||
-            !payload.role
-        ) {
-            throw new UnauthorizedException(
-                'Token inválido.',
-            );
-        }
-
-        if (
-            !Object.values(UserRole).includes(
-                payload.role,
-            )
-        ) {
-            throw new UnauthorizedException(
-                'Rol inválido.',
-            );
-        }
-
+    async validate(payload: JwtPayload) {
         return {
             sub: payload.sub,
             email: payload.email,

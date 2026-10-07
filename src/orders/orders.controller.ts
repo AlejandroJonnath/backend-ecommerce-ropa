@@ -6,7 +6,7 @@ import {
     UseGuards,
 } from '@nestjs/common';
 
-import { Request } from 'express';
+import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type.js';
 
 import { CreateOrderDto } from './dto/create-order.dto.js';
 
@@ -18,14 +18,8 @@ import { RolesGuard } from '../auth/guards/roles.guard.js';
 
 import { Roles } from '../auth/decorators/roles.decorator.js';
 
-import { JwtPayload } from '../auth/types/jwt-payload.type.js';
 
 import { UserRole } from '../users/entities/user.entity.js';
-
-type AuthenticatedRequest =
-    Request & {
-        user: JwtPayload;
-    };
 
 @Controller('orders')
 export class OrdersController {
