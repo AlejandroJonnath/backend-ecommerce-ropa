@@ -8,33 +8,61 @@ import {
     ManyToOne,
     OneToMany,
     PrimaryGeneratedColumn,
-    type Relation,
     Unique,
     UpdateDateColumn,
 } from 'typeorm';
 
 import { Color } from '../../colors/entities/color.entity.js';
-import { Size } from '../../sizes/entities/size.entity.js';
-import { OrderItem } from '../../order-items/entities/order-item.entity.js';
 import { InventoryMovement } from '../../inventory/entities/inventory-movement.entity.js';
-import { Product } from './product.entity.js';
+import { OrderItem } from '../../order-items/entities/order-item.entity.js';
+import { Size } from '../../sizes/entities/size.entity.js';
+import { _productRelations, Product } from './product.entity.js';
 
-@Check('chk_product_variant_stock', 'stock >= 0')
-@Check('chk_product_variant_reserved_stock', 'reserved_stock >= 0')
+@Entity('product_variants')
+@Check(
+    'chk_product_variant_stock',
+    'stock >= 0',
+)
+@Check(
+    'chk_product_variant_reserved_stock',
+    'reserved_stock >= 0',
+)
 @Check(
     'chk_product_variant_reserved_not_greater_stock',
     'reserved_stock <= stock',
 )
-@Entity('product_variants')
-@Unique('uq_product_variant_combination', [
-    'productId',
-    'sizeId',
-    'colorId',
-])
-@Unique('uq_product_variant_sku', ['sku'])
-@Index('idx_product_variants_product_active', ['productId', 'isActive'])
-@Index('idx_product_variants_size_id', ['sizeId'])
-@Index('idx_product_variants_color_id', ['colorId'])
+@Check(
+    'chk_product_variant_cost',
+    'cost >= 0',
+)
+@Check(
+    'chk_product_variant_price',
+    'price IS NULL OR price >= 0',
+)
+@Unique(
+    'uq_product_variant_combination',
+    [
+        'productId',
+        'sizeId',
+        'colorId',
+    ],
+)
+@Unique(
+    'uq_product_variant_sku',
+    ['sku'],
+)
+@Index(
+    'idx_product_variants_product_active',
+    ['productId', 'isActive'],
+)
+@Index(
+    'idx_product_variants_size_id',
+    ['sizeId'],
+)
+@Index(
+    'idx_product_variants_color_id',
+    ['colorId'],
+)
 export class ProductVariant {
     @PrimaryGeneratedColumn('uuid')
     id: string;
@@ -45,13 +73,17 @@ export class ProductVariant {
     })
     productId: string;
 
-    @ManyToOne(() => Product, (product) => product.variants, {
-        onDelete: 'RESTRICT',
-    })
+    @ManyToOne(
+        () => Product,
+        (product) => product.variants,
+        {
+            onDelete: 'RESTRICT',
+        },
+    )
     @JoinColumn({
         name: 'product_id',
     })
-    product: Relation<Product>;
+    product: Product;
 
     @Column({
         name: 'size_id',
@@ -59,13 +91,16 @@ export class ProductVariant {
     })
     sizeId: string;
 
-    @ManyToOne(() => Size, {
-        onDelete: 'RESTRICT',
-    })
+    @ManyToOne(
+        () => Size,
+        {
+            onDelete: 'RESTRICT',
+        },
+    )
     @JoinColumn({
         name: 'size_id',
     })
-    size: Relation<Size>;
+    size: Size;
 
     @Column({
         name: 'color_id',
@@ -73,13 +108,16 @@ export class ProductVariant {
     })
     colorId: string;
 
-    @ManyToOne(() => Color, {
-        onDelete: 'RESTRICT',
-    })
+    @ManyToOne(
+        () => Color,
+        {
+            onDelete: 'RESTRICT',
+        },
+    )
     @JoinColumn({
         name: 'color_id',
     })
-    color: Relation<Color>;
+    color: Color;
 
     @Column({
         type: 'varchar',
@@ -109,6 +147,13 @@ export class ProductVariant {
     stock: number;
 
     @Column({
+        name: 'reserved_stock',
+        type: 'integer',
+        default: 0,
+    })
+    reservedStock: number;
+
+    @Column({
         name: 'is_active',
         type: 'boolean',
         default: true,
@@ -127,19 +172,20 @@ export class ProductVariant {
     })
     updatedAt: Date;
 
-    @OneToMany(() => OrderItem, (orderItem) => orderItem.productVariant)
-    orderItems: Relation<OrderItem>[];
+    @OneToMany(
+        () => OrderItem,
+        (orderItem) =>
+            orderItem.productVariant,
+    )
+    orderItems: OrderItem[];
 
     @OneToMany(
         () => InventoryMovement,
-        (movement) => movement.productVariant,
+        (movement) =>
+            movement.productVariant,
     )
-    inventoryMovements: Relation<InventoryMovement>[];
-
-    @Column({
-        name: 'reserved_stock',
-        type: 'integer',
-        default: 0,
-    })
-    reservedStock: number;
+    inventoryMovements: InventoryMovement[];
 }
+
+// Self-register in the parent's lazy-reference registry.
+_productRelations.ProductVariant = ProductVariant;

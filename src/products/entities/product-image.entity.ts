@@ -6,13 +6,15 @@ import {
     JoinColumn,
     ManyToOne,
     PrimaryGeneratedColumn,
-    type Relation,
 } from 'typeorm';
 
-import { Product } from './product.entity.js';
+import { _productRelations, Product } from './product.entity.js';
 
 @Entity('product_images')
-@Index('idx_product_images_product_id', ['productId'])
+@Index(
+    'idx_product_images_product_position',
+    ['productId', 'position'],
+)
 export class ProductImage {
     @PrimaryGeneratedColumn('uuid')
     id: string;
@@ -23,13 +25,17 @@ export class ProductImage {
     })
     productId: string;
 
-    @ManyToOne(() => Product, (product) => product.images, {
-        onDelete: 'CASCADE',
-    })
+    @ManyToOne(
+        () => Product,
+        (product) => product.images,
+        {
+            onDelete: 'CASCADE',
+        },
+    )
     @JoinColumn({
         name: 'product_id',
     })
-    product: Relation<Product>;
+    product: Product;
 
     @Column({
         name: 'image_url',
@@ -49,3 +55,9 @@ export class ProductImage {
     })
     createdAt: Date;
 }
+
+// Self-register in the parent's lazy-reference registry.
+// product.entity.ts uses `import type` for this module (no value import),
+// so there is no circular initialization. By the time TypeORM calls the
+// @OneToMany callback, this line has already run and the ref is set.
+_productRelations.ProductImage = ProductImage;
