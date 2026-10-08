@@ -4,169 +4,97 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 
-import {
-    InjectRepository,
-} from '@nestjs/typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
 
-import {
-    Brackets,
-    Repository,
-} from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 
-import {
-    Category,
-} from '../categories/entities/category.entity.js';
+import { Category } from '../categories/entities/category.entity.js';
+import { Color } from '../colors/entities/color.entity.js';
+import { Size } from '../sizes/entities/size.entity.js';
 
-import {
-    Color,
-} from '../colors/entities/color.entity.js';
+import { CreateProductDto } from './dto/create-product.dto.js';
+import { CreateProductVariantDto } from './dto/create-product-variant.dto.js';
+import { QueryProductsDto } from './dto/query-products.dto.js';
+import { UpdateProductDto } from './dto/update-product.dto.js';
+import { UpdateProductVariantDto } from './dto/update-product-variant.dto.js';
 
-import {
-    Size,
-} from '../sizes/entities/size.entity.js';
-
-import {
-    CreateProductDto,
-} from './dto/create-product.dto.js';
-
-import {
-    CreateProductVariantDto,
-} from './dto/create-product-variant.dto.js';
-
-import {
-    QueryProductsDto,
-} from './dto/query-products.dto.js';
-
-import {
-    UpdateProductDto,
-} from './dto/update-product.dto.js';
-
-import {
-    UpdateProductVariantDto,
-} from './dto/update-product-variant.dto.js';
-
-import {
-    Product,
-} from './entities/product.entity.js';
-
-import {
-    ProductVariant,
-} from './entities/product-variant.entity.js';
+import { Product } from './entities/product.entity.js';
+import { ProductVariant } from './entities/product-variant.entity.js';
 
 @Injectable()
 export class ProductsService {
     constructor(
         @InjectRepository(Product)
-        private readonly productRepository:
-            Repository<Product>,
+        private readonly productRepository: Repository<Product>,
 
         @InjectRepository(ProductVariant)
-        private readonly productVariantRepository:
-            Repository<ProductVariant>,
+        private readonly productVariantRepository: Repository<ProductVariant>,
 
         @InjectRepository(Category)
-        private readonly categoryRepository:
-            Repository<Category>,
+        private readonly categoryRepository: Repository<Category>,
 
         @InjectRepository(Size)
-        private readonly sizeRepository:
-            Repository<Size>,
+        private readonly sizeRepository: Repository<Size>,
 
         @InjectRepository(Color)
-        private readonly colorRepository:
-            Repository<Color>,
+        private readonly colorRepository: Repository<Color>,
     ) { }
 
-    async findAll(
-        query: QueryProductsDto,
-    ) {
-        const page =
-            query.page ?? 1;
+    async findAll(query: QueryProductsDto) {
+        const page = query.page ?? 1;
+        const limit = query.limit ?? 20;
+        const skip = (page - 1) * limit;
 
-        const limit =
-            query.limit ?? 20;
+        const sortBy = query.sortBy ?? 'createdAt';
+        const sortOrder = query.sortOrder ?? 'DESC';
 
-        const skip =
-            (page - 1) * limit;
-
-        const sortBy =
-            query.sortBy ?? 'createdAt';
-
-        const sortOrder =
-            query.sortOrder ?? 'DESC';
-
-        const queryBuilder =
-            this.productRepository
-                .createQueryBuilder('product')
-                .leftJoinAndSelect(
-                    'product.category',
-                    'category',
-                )
-                .leftJoinAndSelect(
-                    'product.images',
-                    'image',
-                )
-                .where(
-                    'product.is_active = true',
-                )
-                .andWhere(
-                    'category.is_active = true',
-                );
+        const queryBuilder = this.productRepository
+            .createQueryBuilder('product')
+            .leftJoinAndSelect('product.category', 'category')
+            .leftJoinAndSelect('product.images', 'image')
+            .where('product.is_active = true')
+            .andWhere('category.is_active = true');
 
         if (query.categoryId) {
             queryBuilder.andWhere(
                 'product.category_id = :categoryId',
                 {
-                    categoryId:
-                        query.categoryId,
+                    categoryId: query.categoryId,
                 },
             );
         }
 
         if (query.search?.trim()) {
-            const search =
-                query.search
-                    .trim()
-                    .replace(/[%_]/g, '\\$&');
+            const search = query.search
+                .trim()
+                .replace(/[%_]/g, '\\$&');
 
             queryBuilder.andWhere(
-                new Brackets(
-                    (qb) => {
-                        qb.where(
-                            'product.name ILIKE :search',
-                            {
-                                search: `%${search}%`,
-                            },
-                        ).orWhere(
-                            'product.description ILIKE :search',
-                            {
-                                search: `%${search}%`,
-                            },
-                        );
-                    },
-                ),
+                new Brackets((qb) => {
+                    qb.where(
+                        'product.name ILIKE :search',
+                        {
+                            search: `%${search}%`,
+                        },
+                    ).orWhere(
+                        'product.description ILIKE :search',
+                        {
+                            search: `%${search}%`,
+                        },
+                    );
+                }),
             );
         }
 
-        const sortColumn =
-            this.getSortColumn(sortBy);
+        const sortColumn = this.getSortColumn(sortBy);
 
         queryBuilder
-            .orderBy(
-                sortColumn,
-                sortOrder,
-            )
-            .addOrderBy(
-                'product.id',
-                'ASC',
-            )
+            .orderBy(sortColumn, sortOrder)
+            .addOrderBy('product.id', 'ASC')
             .skip(skip)
             .take(limit);
 
-        const [
-            products,
-            total,
-        ] =
+        const [products, total] =
             await queryBuilder.getManyAndCount();
 
         return {
@@ -175,105 +103,67 @@ export class ProductsService {
                 page,
                 limit,
                 total,
-                totalPages:
-                    Math.ceil(
-                        total / limit,
-                    ),
+                totalPages: Math.ceil(total / limit),
                 hasNextPage:
-                    page <
-                    Math.ceil(
-                        total / limit,
-                    ),
-                hasPreviousPage:
-                    page > 1,
+                    page < Math.ceil(total / limit),
+                hasPreviousPage: page > 1,
             },
         };
     }
 
-    async findAllForAdmin(
-        query: QueryProductsDto,
-    ) {
-        const page =
-            query.page ?? 1;
+    async findAllForAdmin(query: QueryProductsDto) {
+        const page = query.page ?? 1;
+        const limit = query.limit ?? 20;
+        const skip = (page - 1) * limit;
 
-        const limit =
-            query.limit ?? 20;
+        const sortBy = query.sortBy ?? 'createdAt';
+        const sortOrder = query.sortOrder ?? 'DESC';
 
-        const skip =
-            (page - 1) * limit;
-
-        const sortBy =
-            query.sortBy ?? 'createdAt';
-
-        const sortOrder =
-            query.sortOrder ?? 'DESC';
-
-        const queryBuilder =
-            this.productRepository
-                .createQueryBuilder('product')
-                .leftJoinAndSelect(
-                    'product.category',
-                    'category',
-                )
-                .leftJoinAndSelect(
-                    'product.images',
-                    'image',
-                );
+        const queryBuilder = this.productRepository
+            .createQueryBuilder('product')
+            .leftJoinAndSelect('product.category', 'category')
+            .leftJoinAndSelect('product.images', 'image');
 
         if (query.categoryId) {
             queryBuilder.andWhere(
                 'product.category_id = :categoryId',
                 {
-                    categoryId:
-                        query.categoryId,
+                    categoryId: query.categoryId,
                 },
             );
         }
 
         if (query.search?.trim()) {
-            const search =
-                query.search
-                    .trim()
-                    .replace(/[%_]/g, '\\$&');
+            const search = query.search
+                .trim()
+                .replace(/[%_]/g, '\\$&');
 
             queryBuilder.andWhere(
-                new Brackets(
-                    (qb) => {
-                        qb.where(
-                            'product.name ILIKE :search',
-                            {
-                                search: `%${search}%`,
-                            },
-                        ).orWhere(
-                            'product.description ILIKE :search',
-                            {
-                                search: `%${search}%`,
-                            },
-                        );
-                    },
-                ),
+                new Brackets((qb) => {
+                    qb.where(
+                        'product.name ILIKE :search',
+                        {
+                            search: `%${search}%`,
+                        },
+                    ).orWhere(
+                        'product.description ILIKE :search',
+                        {
+                            search: `%${search}%`,
+                        },
+                    );
+                }),
             );
         }
 
-        const sortColumn =
-            this.getSortColumn(sortBy);
+        const sortColumn = this.getSortColumn(sortBy);
 
         queryBuilder
-            .orderBy(
-                sortColumn,
-                sortOrder,
-            )
-            .addOrderBy(
-                'product.id',
-                'ASC',
-            )
+            .orderBy(sortColumn, sortOrder)
+            .addOrderBy('product.id', 'ASC')
             .skip(skip)
             .take(limit);
 
-        const [
-            products,
-            total,
-        ] =
+        const [products, total] =
             await queryBuilder.getManyAndCount();
 
         return {
@@ -282,61 +172,44 @@ export class ProductsService {
                 page,
                 limit,
                 total,
-                totalPages:
-                    Math.ceil(
-                        total / limit,
-                    ),
+                totalPages: Math.ceil(total / limit),
                 hasNextPage:
-                    page <
-                    Math.ceil(
-                        total / limit,
-                    ),
-                hasPreviousPage:
-                    page > 1,
+                    page < Math.ceil(total / limit),
+                hasPreviousPage: page > 1,
             },
         };
     }
 
-    async findOne(
-        id: string,
-    ): Promise<Product> {
-        const product =
-            await this.productRepository
-                .createQueryBuilder('product')
-                .leftJoinAndSelect(
-                    'product.category',
-                    'category',
-                )
-                .leftJoinAndSelect(
-                    'product.images',
-                    'image',
-                )
-                .leftJoinAndSelect(
-                    'product.variants',
-                    'variant',
-                )
-                .leftJoinAndSelect(
-                    'variant.size',
-                    'size',
-                )
-                .leftJoinAndSelect(
-                    'variant.color',
-                    'color',
-                )
-                .where(
-                    'product.id = :id',
-                    { id },
-                )
-                .andWhere(
-                    'product.is_active = true',
-                )
-                .andWhere(
-                    'category.is_active = true',
-                )
-                .andWhere(
-                    '(variant.id IS NULL OR variant.is_active = true)',
-                )
-                .getOne();
+    async findOne(id: string): Promise<Product> {
+        const product = await this.productRepository
+            .createQueryBuilder('product')
+            .leftJoinAndSelect(
+                'product.category',
+                'category',
+            )
+            .leftJoinAndSelect(
+                'product.images',
+                'image',
+            )
+            .leftJoinAndSelect(
+                'product.variants',
+                'variant',
+            )
+            .leftJoinAndSelect(
+                'variant.size',
+                'size',
+            )
+            .leftJoinAndSelect(
+                'variant.color',
+                'color',
+            )
+            .where('product.id = :id', { id })
+            .andWhere('product.is_active = true')
+            .andWhere('category.is_active = true')
+            .andWhere(
+                '(variant.id IS NULL OR variant.is_active = true)',
+            )
+            .getOne();
 
         if (!product) {
             throw new NotFoundException(
@@ -350,34 +223,30 @@ export class ProductsService {
     async findOneForAdmin(
         id: string,
     ): Promise<Product> {
-        const product =
-            await this.productRepository
-                .createQueryBuilder('product')
-                .leftJoinAndSelect(
-                    'product.category',
-                    'category',
-                )
-                .leftJoinAndSelect(
-                    'product.images',
-                    'image',
-                )
-                .leftJoinAndSelect(
-                    'product.variants',
-                    'variant',
-                )
-                .leftJoinAndSelect(
-                    'variant.size',
-                    'size',
-                )
-                .leftJoinAndSelect(
-                    'variant.color',
-                    'color',
-                )
-                .where(
-                    'product.id = :id',
-                    { id },
-                )
-                .getOne();
+        const product = await this.productRepository
+            .createQueryBuilder('product')
+            .leftJoinAndSelect(
+                'product.category',
+                'category',
+            )
+            .leftJoinAndSelect(
+                'product.images',
+                'image',
+            )
+            .leftJoinAndSelect(
+                'product.variants',
+                'variant',
+            )
+            .leftJoinAndSelect(
+                'variant.size',
+                'size',
+            )
+            .leftJoinAndSelect(
+                'variant.color',
+                'color',
+            )
+            .where('product.id = :id', { id })
+            .getOne();
 
         if (!product) {
             throw new NotFoundException(
@@ -391,16 +260,9 @@ export class ProductsService {
     async create(
         dto: CreateProductDto,
     ): Promise<Product> {
-        const name =
-            dto.name.trim();
-
-        const slug =
-            dto.slug
-                .trim()
-                .toLowerCase();
-
-        const basePrice =
-            dto.basePrice.trim();
+        const name = dto.name.trim();
+        const slug = dto.slug.trim().toLowerCase();
+        const basePrice = dto.basePrice.trim();
 
         const category =
             await this.categoryRepository.findOne({
@@ -418,9 +280,7 @@ export class ProductsService {
 
         const existingSlug =
             await this.productRepository.findOne({
-                where: {
-                    slug,
-                },
+                where: { slug },
             });
 
         if (existingSlug) {
@@ -431,13 +291,11 @@ export class ProductsService {
 
         const product =
             this.productRepository.create({
-                categoryId:
-                    dto.categoryId,
+                categoryId: dto.categoryId,
                 name,
                 slug,
                 description:
-                    dto.description?.trim() ??
-                    null,
+                    dto.description?.trim() ?? null,
                 basePrice,
                 isActive: true,
             });
@@ -452,9 +310,7 @@ export class ProductsService {
                 savedProduct.id,
             );
         } catch (error) {
-            if (
-                this.isUniqueViolation(error)
-            ) {
+            if (this.isUniqueViolation(error)) {
                 throw new ConflictException(
                     'Ya existe un producto con ese slug.',
                 );
@@ -471,10 +327,7 @@ export class ProductsService {
         const product =
             await this.findOneForAdmin(id);
 
-        if (
-            dto.categoryId !==
-            undefined
-        ) {
+        if (dto.categoryId !== undefined) {
             const category =
                 await this.categoryRepository.findOne({
                     where: {
@@ -489,33 +342,21 @@ export class ProductsService {
                 );
             }
 
-            product.categoryId =
-                dto.categoryId;
+            product.categoryId = dto.categoryId;
         }
 
-        if (
-            dto.name !== undefined
-        ) {
-            product.name =
-                dto.name.trim();
+        if (dto.name !== undefined) {
+            product.name = dto.name.trim();
         }
 
-        if (
-            dto.slug !== undefined
-        ) {
+        if (dto.slug !== undefined) {
             const slug =
-                dto.slug
-                    .trim()
-                    .toLowerCase();
+                dto.slug.trim().toLowerCase();
 
-            if (
-                slug !== product.slug
-            ) {
+            if (slug !== product.slug) {
                 const existingSlug =
                     await this.productRepository.findOne({
-                        where: {
-                            slug,
-                        },
+                        where: { slug },
                     });
 
                 if (
@@ -527,23 +368,16 @@ export class ProductsService {
                     );
                 }
 
-                product.slug =
-                    slug;
+                product.slug = slug;
             }
         }
 
-        if (
-            dto.description !==
-            undefined
-        ) {
+        if (dto.description !== undefined) {
             product.description =
                 dto.description.trim();
         }
 
-        if (
-            dto.basePrice !==
-            undefined
-        ) {
+        if (dto.basePrice !== undefined) {
             product.basePrice =
                 dto.basePrice.trim();
         }
@@ -557,9 +391,7 @@ export class ProductsService {
                 product.id,
             );
         } catch (error) {
-            if (
-                this.isUniqueViolation(error)
-            ) {
+            if (this.isUniqueViolation(error)) {
                 throw new ConflictException(
                     'Ya existe un producto con ese slug.',
                 );
@@ -579,8 +411,7 @@ export class ProductsService {
             return product;
         }
 
-        product.isActive =
-            false;
+        product.isActive = false;
 
         return this.productRepository.save(
             product,
@@ -611,8 +442,7 @@ export class ProductsService {
             );
         }
 
-        product.isActive =
-            true;
+        product.isActive = true;
 
         return this.productRepository.save(
             product,
@@ -627,9 +457,7 @@ export class ProductsService {
         );
 
         return this.productVariantRepository.find({
-            where: {
-                productId,
-            },
+            where: { productId },
             relations: {
                 size: true,
                 color: true,
@@ -709,14 +537,11 @@ export class ProductsService {
             );
         }
 
-        const sku =
-            dto.sku.trim();
+        const sku = dto.sku.trim();
 
         const existingSku =
             await this.productVariantRepository.findOne({
-                where: {
-                    sku,
-                },
+                where: { sku },
             });
 
         if (existingSku) {
@@ -747,11 +572,13 @@ export class ProductsService {
                 colorId: dto.colorId,
                 sku,
                 price:
-                    dto.price?.trim() ??
-                    null,
+                    dto.price?.trim() ?? null,
                 cost: dto.cost.trim(),
-                stock:
-                    dto.stock ?? 0,
+
+                // Toda variante nueva comienza sin stock.
+                // Las entradas deben registrarse mediante Inventory.
+                stock: 0,
+
                 reservedStock: 0,
                 isActive: true,
             });
@@ -767,9 +594,7 @@ export class ProductsService {
                 savedVariant.id,
             );
         } catch (error) {
-            if (
-                this.isUniqueViolation(error)
-            ) {
+            if (this.isUniqueViolation(error)) {
                 throw new ConflictException(
                     'El SKU o la combinación de talla y color ya existe.',
                 );
@@ -790,9 +615,7 @@ export class ProductsService {
                 variantId,
             );
 
-        if (
-            dto.sizeId !== undefined
-        ) {
+        if (dto.sizeId !== undefined) {
             const size =
                 await this.sizeRepository.findOne({
                     where: {
@@ -807,13 +630,10 @@ export class ProductsService {
                 );
             }
 
-            variant.sizeId =
-                dto.sizeId;
+            variant.sizeId = dto.sizeId;
         }
 
-        if (
-            dto.colorId !== undefined
-        ) {
+        if (dto.colorId !== undefined) {
             const color =
                 await this.colorRepository.findOne({
                     where: {
@@ -828,53 +648,37 @@ export class ProductsService {
                 );
             }
 
-            variant.colorId =
-                dto.colorId;
+            variant.colorId = dto.colorId;
         }
 
-        if (
-            dto.sku !== undefined
-        ) {
-            const sku =
-                dto.sku.trim();
+        if (dto.sku !== undefined) {
+            const sku = dto.sku.trim();
 
-            if (
-                sku !== variant.sku
-            ) {
+            if (sku !== variant.sku) {
                 const existingSku =
                     await this.productVariantRepository.findOne({
-                        where: {
-                            sku,
-                        },
+                        where: { sku },
                     });
 
                 if (
                     existingSku &&
-                    existingSku.id !==
-                    variant.id
+                    existingSku.id !== variant.id
                 ) {
                     throw new ConflictException(
                         'Ya existe una variante con ese SKU.',
                     );
                 }
 
-                variant.sku =
-                    sku;
+                variant.sku = sku;
             }
         }
 
-        if (
-            dto.price !== undefined
-        ) {
-            variant.price =
-                dto.price.trim();
+        if (dto.price !== undefined) {
+            variant.price = dto.price.trim();
         }
 
-        if (
-            dto.cost !== undefined
-        ) {
-            variant.cost =
-                dto.cost.trim();
+        if (dto.cost !== undefined) {
+            variant.cost = dto.cost.trim();
         }
 
         const duplicateCombination =
@@ -888,8 +692,7 @@ export class ProductsService {
 
         if (
             duplicateCombination &&
-            duplicateCombination.id !==
-            variant.id
+            duplicateCombination.id !== variant.id
         ) {
             throw new ConflictException(
                 'Ya existe otra variante con esa combinación de talla y color.',
@@ -906,9 +709,7 @@ export class ProductsService {
                 variantId,
             );
         } catch (error) {
-            if (
-                this.isUniqueViolation(error)
-            ) {
+            if (this.isUniqueViolation(error)) {
                 throw new ConflictException(
                     'El SKU o la combinación de talla y color ya existe.',
                 );
@@ -932,16 +733,13 @@ export class ProductsService {
             return variant;
         }
 
-        if (
-            variant.reservedStock > 0
-        ) {
+        if (variant.reservedStock > 0) {
             throw new ConflictException(
                 'No puedes desactivar una variante que tiene stock reservado.',
             );
         }
 
-        variant.isActive =
-            false;
+        variant.isActive = false;
 
         return this.productVariantRepository.save(
             variant,
@@ -1001,8 +799,7 @@ export class ProductsService {
             );
         }
 
-        variant.isActive =
-            true;
+        variant.isActive = true;
 
         return this.productVariantRepository.save(
             variant,
@@ -1058,12 +855,8 @@ export class ProductsService {
         }
 
         const databaseError =
-            error as {
-                code?: string;
-            };
+            error as { code?: string };
 
-        return (
-            databaseError.code === '23505'
-        );
+        return databaseError.code === '23505';
     }
 }
