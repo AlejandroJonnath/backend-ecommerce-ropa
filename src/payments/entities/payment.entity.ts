@@ -40,13 +40,24 @@ export class Payment {
     })
     orderId: string;
 
-    @ManyToOne(() => Order, (order) => order.payments, {
-        onDelete: 'CASCADE',
-    })
+    @ManyToOne(
+        () => Order,
+        (order) => order.payments,
+        {
+            onDelete: 'RESTRICT',
+        },
+    )
     @JoinColumn({
         name: 'order_id',
     })
     order: Relation<Order>;
+
+    @Column({
+        type: 'numeric',
+        precision: 12,
+        scale: 2,
+    })
+    amount: string;
 
     @Column({
         type: 'enum',
@@ -62,19 +73,12 @@ export class Payment {
     status: PaymentStatus;
 
     @Column({
-        type: 'numeric',
-        precision: 12,
-        scale: 2,
-    })
-    amount: string;
-
-    @Column({
-        name: 'transaction_reference',
+        name: 'external_reference',
         type: 'varchar',
         length: 255,
         nullable: true,
     })
-    transactionReference: string | null;
+    externalReference: string | null;
 
     @Column({
         type: 'text',
