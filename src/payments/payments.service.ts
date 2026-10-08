@@ -1,5 +1,4 @@
 import {
-    BadRequestException,
     ConflictException,
     Injectable,
     NotFoundException,
@@ -7,7 +6,7 @@ import {
 
 import { InjectRepository } from '@nestjs/typeorm';
 
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 
 import { Decimal } from 'decimal.js';
 
@@ -45,306 +44,463 @@ export class PaymentsService {
         private readonly orderItemRepository: Repository<OrderItem>,
     ) { }
 
+    /**
+     * Crea un pago pendiente para una orden.
+     *
+     * El importe NO viene desde el frontend.
+     * Siempre se toma directamente de order.total.
+     */
     async createPayment(
         orderId: string,
         userId: string,
         dto: CreatePaymentDto,
     ): Promise<Payment> {
-        return this.dataSource.transaction(
-            async (manager) => {
-                const order = await manager
-                    .getRepository(Order)
-                    .createQueryBuilder('order')
-                    .setLock('pessimistic_write')
-                    .where('order.id = :orderId', {
+        return this.dataSource.transaction(async (manager) => {
+            const order = await manager
+                .getRepository(Order)
+                .createQueryBuilder('order')
+                .setLock('pessimistic_write')
+                .where('order.id = :orderId', { orderId })
+                .andWhere('order.user_id = :userId', { userId })
+                .getOne();
+
+            if (!order) {
+                throw new NotFoundException(
+                    'La orden no existe.',
+                );
+            }
+
+            if (order.status === OrderStatus.CANCELLED) {
+                throw new ConflictException(
+                    'No puedes pagar una orden cancelada.',
+                );
+            }
+
+            if (order.status !== OrderStatus.PENDING) {
+                throw new ConflictException(
+                    'Solo se pueden pagar órdenes pendientes.',
+                );
+            }
+
+            const paymentRepository =
+                manager.getRepository(Payment);
+
+            const existingPaidPayment =
+                await paymentRepository.findOne({
+                    where: {
                         orderId,
-                    })
-                    .andWhere('order.user_id = :userId', {
-                        userId,
-                    })
-                    .getOne();
+                        status: PaymentStatus.PAID,
+                    },
+                });
 
-                if (!order) {
-                    throw new NotFoundException(
-                        'La orden no existe.',
-                    );
-                }
+            if (existingPaidPayment) {
+                throw new ConflictException(
+                    'La orden ya tiene un pago confirmado.',
+                );
+            }
 
-                if (
-                    order.status ===
-                    OrderStatus.CANCELLED
-                ) {
-                    throw new ConflictException(
-                        'No puedes pagar una orden cancelada.',
-                    );
-                }
+            const existingPendingPayment =
+                await paymentRepository.findOne({
+                    where: {
+                        orderId,
+                        status: PaymentStatus.PENDING,
+                    },
+                });
 
-                if (
-                    order.status ===
-                    OrderStatus.DELIVERED
-                ) {
-                    throw new ConflictException(
-                        'La orden ya fue entregada.',
-                    );
-                }
+            if (existingPendingPayment) {
+                throw new ConflictException(
+                    'La orden ya tiene un pago pendiente.',
+                );
+            }
 
-                const existingPaidPayment =
-                    await manager
-                        .getRepository(Payment)
-                        .findOne({
-                            where: {
-                                orderId,
-                                status: PaymentStatus.PAID,
-                            },
-                        });
+            const payment = paymentRepository.create({
+                orderId,
+                amount: order.total,
+                method: dto.method,
+                status: PaymentStatus.PENDING,
+                externalReference:
+                    dto.externalReference?.trim() ?? null,
+                notes: dto.notes?.trim() ?? null,
+            });
 
-                if (existingPaidPayment) {
-                    throw new ConflictException(
-                        'La orden ya tiene un pago confirmado.',
-                    );
-                }
-
-                const existingPendingPayment =
-                    await manager
-                        .getRepository(Payment)
-                        .findOne({
-                            where: {
-                                orderId,
-                                status: PaymentStatus.PENDING,
-                            },
-                        });
-
-                if (existingPendingPayment) {
-                    throw new ConflictException(
-                        'La orden ya tiene un pago pendiente.',
-                    );
-                }
-
-                const payment =
-                    manager
-                        .getRepository(Payment)
-                        .create({
-                            orderId,
-                            amount: order.total,
-                            method: dto.method,
-                            status:
-                                PaymentStatus.PENDING,
-                            externalReference:
-                                dto.externalReference ??
-                                null,
-                            notes:
-                                dto.notes?.trim() ?? null,
-                        });
-
-                return manager
-                    .getRepository(Payment)
-                    .save(payment);
-            },
-        );
+            return paymentRepository.save(payment);
+        });
     }
 
+    /**
+     * Confirma un pago pendiente.
+     *
+     * Flujo:
+     *
+     * 1. Obtiene la orden asociada.
+     * 2. Bloquea la orden.
+     * 3. Bloquea el pago.
+     * 4. Valida totales.
+     * 5. Confirma las reservas de inventario.
+     * 6. Registra movimientos SALE.
+     * 7. Marca el pago como PAID.
+     * 8. Marca la orden como CONFIRMED.
+     *
+     * Todo ocurre dentro de una única transacción.
+     */
     async confirmPayment(
         paymentId: string,
         adminUserId: string,
         notes: string | null = null,
     ): Promise<Payment> {
-        return this.dataSource.transaction(
-            async (manager) => {
-                const payment =
-                    await manager
-                        .getRepository(Payment)
-                        .createQueryBuilder('payment')
-                        .setLock('pessimistic_write')
-                        .where('payment.id = :paymentId', {
-                            paymentId,
-                        })
-                        .getOne();
+        return this.dataSource.transaction(async (manager) => {
+            const paymentRepository =
+                manager.getRepository(Payment);
 
-                if (!payment) {
-                    throw new NotFoundException(
-                        'El pago no existe.',
-                    );
-                }
+            const orderRepository =
+                manager.getRepository(Order);
 
-                if (
-                    payment.status ===
-                    PaymentStatus.PAID
-                ) {
-                    throw new ConflictException(
-                        'El pago ya fue confirmado.',
-                    );
-                }
+            const orderItemRepository =
+                manager.getRepository(OrderItem);
 
-                if (
-                    payment.status !==
-                    PaymentStatus.PENDING
-                ) {
-                    throw new ConflictException(
-                        'Solo se pueden confirmar pagos pendientes.',
-                    );
-                }
+            /*
+             * Primero obtenemos el pago sin lock únicamente
+             * para conocer la orden asociada.
+             *
+             * Después bloqueamos primero la orden y luego
+             * el pago para mantener un orden consistente
+             * de locks y reducir riesgos de deadlocks.
+             */
+            const paymentReference =
+                await paymentRepository.findOne({
+                    where: {
+                        id: paymentId,
+                    },
+                });
 
-                const order =
-                    await manager
-                        .getRepository(Order)
-                        .createQueryBuilder('order')
-                        .setLock('pessimistic_write')
-                        .where('order.id = :orderId', {
-                            orderId: payment.orderId,
-                        })
-                        .getOne();
+            if (!paymentReference) {
+                throw new NotFoundException(
+                    'El pago no existe.',
+                );
+            }
 
-                if (!order) {
-                    throw new NotFoundException(
-                        'La orden asociada al pago no existe.',
-                    );
-                }
+            const order = await orderRepository
+                .createQueryBuilder('order')
+                .setLock('pessimistic_write')
+                .where('order.id = :orderId', {
+                    orderId: paymentReference.orderId,
+                })
+                .getOne();
 
-                if (
-                    order.status ===
-                    OrderStatus.CANCELLED
-                ) {
-                    throw new ConflictException(
-                        'No puedes confirmar el pago de una orden cancelada.',
-                    );
-                }
+            if (!order) {
+                throw new NotFoundException(
+                    'La orden asociada al pago no existe.',
+                );
+            }
 
-                const orderItems =
-                    await manager
-                        .getRepository(OrderItem)
-                        .find({
-                            where: {
-                                orderId: order.id,
-                            },
-                            relations: {
-                                productVariant: true,
-                            },
-                        });
+            const payment = await paymentRepository
+                .createQueryBuilder('payment')
+                .setLock('pessimistic_write')
+                .where('payment.id = :paymentId', {
+                    paymentId,
+                })
+                .getOne();
 
-                if (orderItems.length === 0) {
-                    throw new ConflictException(
-                        'La orden no contiene productos.',
-                    );
-                }
+            if (!payment) {
+                throw new NotFoundException(
+                    'El pago no existe.',
+                );
+            }
 
-                const expectedTotal =
-                    orderItems.reduce(
-                        (
-                            total,
-                            item,
-                        ) =>
-                            total.plus(
-                                new Decimal(
-                                    item.subtotal,
-                                ),
-                            ),
-                        new Decimal(0),
-                    );
+            if (payment.status === PaymentStatus.PAID) {
+                throw new ConflictException(
+                    'El pago ya fue confirmado.',
+                );
+            }
 
-                const orderTotal =
-                    new Decimal(order.total);
+            if (payment.status !== PaymentStatus.PENDING) {
+                throw new ConflictException(
+                    'Solo se pueden confirmar pagos pendientes.',
+                );
+            }
 
-                if (
-                    !expectedTotal.equals(
-                        orderTotal,
-                    )
-                ) {
-                    throw new ConflictException(
-                        'El total de la orden no coincide con sus productos.',
-                    );
-                }
+            if (order.status === OrderStatus.CANCELLED) {
+                throw new ConflictException(
+                    'No puedes confirmar el pago de una orden cancelada.',
+                );
+            }
 
-                for (const item of orderItems) {
-                    await this.inventoryService.confirmReservedStock(
-                        manager,
-                        item.productVariantId,
-                        item.quantity,
-                        adminUserId,
-                        order.id,
-                        'Venta confirmada mediante pago.',
-                    );
-                }
+            if (order.status !== OrderStatus.PENDING) {
+                throw new ConflictException(
+                    'La orden ya no se encuentra pendiente.',
+                );
+            }
 
-                payment.status =
-                    PaymentStatus.PAID;
+            /*
+             * El importe almacenado en el pago debe coincidir
+             * con el total actual de la orden.
+             *
+             * Decimal evita errores de precisión con dinero.
+             */
+            const paymentAmount = new Decimal(
+                payment.amount,
+            );
 
-                if (notes !== null) {
-                    payment.notes =
-                        notes.trim();
-                }
+            const orderTotal = new Decimal(
+                order.total,
+            );
 
-                order.status =
-                    OrderStatus.CONFIRMED;
+            if (!paymentAmount.equals(orderTotal)) {
+                throw new ConflictException(
+                    'El importe del pago no coincide con el total de la orden.',
+                );
+            }
 
-                await manager
-                    .getRepository(Order)
-                    .save(order);
+            const orderItems =
+                await orderItemRepository.find({
+                    where: {
+                        orderId: order.id,
+                    },
+                });
 
-                return manager
-                    .getRepository(Payment)
-                    .save(payment);
-            },
-        );
+            if (orderItems.length === 0) {
+                throw new ConflictException(
+                    'La orden no contiene productos.',
+                );
+            }
+
+            /*
+             * Los items deben bloquearse siempre en el mismo
+             * orden por variantId para reducir deadlocks.
+             */
+            orderItems.sort((a, b) =>
+                a.productVariantId.localeCompare(
+                    b.productVariantId,
+                ),
+            );
+
+            /*
+             * Verificamos que la suma de los items coincida
+             * con el subtotal registrado en la orden.
+             */
+            const calculatedSubtotal =
+                orderItems.reduce(
+                    (total, item) =>
+                        total.plus(
+                            new Decimal(item.subtotal),
+                        ),
+                    new Decimal(0),
+                );
+
+            const orderSubtotal = new Decimal(
+                order.subtotal,
+            );
+
+            if (!calculatedSubtotal.equals(orderSubtotal)) {
+                throw new ConflictException(
+                    'El subtotal de la orden no coincide con sus productos.',
+                );
+            }
+
+            /*
+             * Validamos:
+             *
+             * subtotal
+             * - descuento
+             * + envío
+             * = total
+             */
+            const discount = new Decimal(
+                order.discount,
+            );
+
+            const shippingCost = new Decimal(
+                order.shippingCost,
+            );
+
+            const calculatedTotal = calculatedSubtotal
+                .minus(discount)
+                .plus(shippingCost);
+
+            if (!calculatedTotal.equals(orderTotal)) {
+                throw new ConflictException(
+                    'El total de la orden no coincide con sus valores calculados.',
+                );
+            }
+
+            /*
+             * Confirmamos cada reserva.
+             *
+             * InventoryService vuelve a bloquear cada variante
+             * con pessimistic_write.
+             */
+            for (const item of orderItems) {
+                await this.inventoryService.confirmReservedStock(
+                    manager,
+                    item.productVariantId,
+                    item.quantity,
+                    adminUserId,
+                    order.id,
+                    'Venta confirmada mediante pago.',
+                );
+            }
+
+            payment.status = PaymentStatus.PAID;
+
+            if (notes !== null) {
+                payment.notes = notes.trim();
+            }
+
+            order.status = OrderStatus.CONFIRMED;
+
+            await orderRepository.save(order);
+
+            return paymentRepository.save(payment);
+        });
     }
 
+    /**
+     * Marca un pago como fallido y libera todas
+     * las reservas de inventario de la orden.
+     */
     async failPayment(
         paymentId: string,
         notes: string | null = null,
     ): Promise<Payment> {
-        return this.dataSource.transaction(
-            async (manager) => {
-                const payment =
-                    await manager
-                        .getRepository(Payment)
-                        .createQueryBuilder('payment')
-                        .setLock('pessimistic_write')
-                        .where('payment.id = :paymentId', {
-                            paymentId,
-                        })
-                        .getOne();
+        return this.dataSource.transaction(async (manager) => {
+            const paymentRepository =
+                manager.getRepository(Payment);
 
-                if (!payment) {
-                    throw new NotFoundException(
-                        'El pago no existe.',
-                    );
-                }
+            const orderRepository =
+                manager.getRepository(Order);
 
-                if (
-                    payment.status !==
-                    PaymentStatus.PENDING
-                ) {
-                    throw new ConflictException(
-                        'Solo se pueden marcar como fallidos los pagos pendientes.',
-                    );
-                }
+            const orderItemRepository =
+                manager.getRepository(OrderItem);
 
-                payment.status =
-                    PaymentStatus.FAILED;
+            /*
+             * Primero obtenemos el pago para conocer la orden.
+             */
+            const paymentReference =
+                await paymentRepository.findOne({
+                    where: {
+                        id: paymentId,
+                    },
+                });
 
-                if (notes !== null) {
-                    payment.notes =
-                        notes.trim();
-                }
+            if (!paymentReference) {
+                throw new NotFoundException(
+                    'El pago no existe.',
+                );
+            }
 
-                return manager
-                    .getRepository(Payment)
-                    .save(payment);
-            },
-        );
+            /*
+             * Bloqueamos primero la orden.
+             */
+            const order = await orderRepository
+                .createQueryBuilder('order')
+                .setLock('pessimistic_write')
+                .where('order.id = :orderId', {
+                    orderId: paymentReference.orderId,
+                })
+                .getOne();
+
+            if (!order) {
+                throw new NotFoundException(
+                    'La orden asociada al pago no existe.',
+                );
+            }
+
+            /*
+             * Después bloqueamos el pago.
+             */
+            const payment = await paymentRepository
+                .createQueryBuilder('payment')
+                .setLock('pessimistic_write')
+                .where('payment.id = :paymentId', {
+                    paymentId,
+                })
+                .getOne();
+
+            if (!payment) {
+                throw new NotFoundException(
+                    'El pago no existe.',
+                );
+            }
+
+            if (payment.status === PaymentStatus.FAILED) {
+                throw new ConflictException(
+                    'El pago ya fue marcado como fallido.',
+                );
+            }
+
+            if (payment.status !== PaymentStatus.PENDING) {
+                throw new ConflictException(
+                    'Solo se pueden marcar como fallidos los pagos pendientes.',
+                );
+            }
+
+            if (order.status !== OrderStatus.PENDING) {
+                throw new ConflictException(
+                    'La orden ya no se encuentra pendiente.',
+                );
+            }
+
+            const orderItems =
+                await orderItemRepository.find({
+                    where: {
+                        orderId: order.id,
+                    },
+                });
+
+            /*
+             * Mismo orden de locks utilizado por creación
+             * y confirmación de órdenes.
+             */
+            orderItems.sort((a, b) =>
+                a.productVariantId.localeCompare(
+                    b.productVariantId,
+                ),
+            );
+
+            /*
+             * Liberamos las reservas.
+             *
+             * No reducimos stock físico porque el producto
+             * nunca llegó a salir del inventario.
+             */
+            for (const item of orderItems) {
+                await this.inventoryService.releaseReservedStock(
+                    manager,
+                    item.productVariantId,
+                    item.quantity,
+                );
+            }
+
+            payment.status = PaymentStatus.FAILED;
+
+            if (notes !== null) {
+                payment.notes = notes.trim();
+            }
+
+            return paymentRepository.save(payment);
+        });
     }
 
+    /**
+     * Obtiene un pago perteneciente al usuario autenticado.
+     */
     async getPayment(
         paymentId: string,
+        userId: string,
     ): Promise<Payment> {
-        const payment =
-            await this.paymentRepository.findOne({
-                where: {
-                    id: paymentId,
-                },
-                relations: {
-                    order: true,
-                },
-            });
+        const payment = await this.paymentRepository
+            .createQueryBuilder('payment')
+            .innerJoinAndSelect(
+                'payment.order',
+                'order',
+            )
+            .where('payment.id = :paymentId', {
+                paymentId,
+            })
+            .andWhere('order.user_id = :userId', {
+                userId,
+            })
+            .getOne();
 
         if (!payment) {
             throw new NotFoundException(
@@ -355,19 +511,24 @@ export class PaymentsService {
         return payment;
     }
 
+    /**
+     * Obtiene los pagos de una orden.
+     *
+     * Si userId existe, se verifica que la orden
+     * pertenezca al usuario.
+     */
     async getOrderPayments(
         orderId: string,
         userId?: string,
     ): Promise<Payment[]> {
-        const queryBuilder =
-            this.paymentRepository
-                .createQueryBuilder('payment')
-                .where(
-                    'payment.order_id = :orderId',
-                    {
-                        orderId,
-                    },
-                );
+        const queryBuilder = this.paymentRepository
+            .createQueryBuilder('payment')
+            .where(
+                'payment.order_id = :orderId',
+                {
+                    orderId,
+                },
+            );
 
         if (userId) {
             queryBuilder
@@ -388,9 +549,16 @@ export class PaymentsService {
                 'payment.created_at',
                 'DESC',
             )
+            .addOrderBy(
+                'payment.id',
+                'DESC',
+            )
             .getMany();
     }
 
+    /**
+     * Listado administrativo de pagos.
+     */
     async getPayments(
         query: QueryPaymentsDto,
     ) {
@@ -428,11 +596,11 @@ export class PaymentsService {
             .take(limit);
 
         const [payments, total] =
-            await queryBuilder
-                .getManyAndCount();
+            await queryBuilder.getManyAndCount();
 
         return {
             data: payments,
+
             pagination: {
                 page,
                 limit,
@@ -442,9 +610,7 @@ export class PaymentsService {
                 ),
                 hasNextPage:
                     page <
-                    Math.ceil(
-                        total / limit,
-                    ),
+                    Math.ceil(total / limit),
                 hasPreviousPage:
                     page > 1,
             },

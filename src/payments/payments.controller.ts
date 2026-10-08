@@ -1,4 +1,5 @@
 import {
+    BadRequestException,
     Body,
     Controller,
     Get,
@@ -9,7 +10,6 @@ import {
     Query,
     Req,
     UseGuards,
-    BadRequestException
 } from '@nestjs/common';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
@@ -22,6 +22,10 @@ import { CreatePaymentDto } from './dto/create-payment.dto.js';
 import { QueryPaymentsDto } from './dto/query-payments.dto.js';
 import { UpdatePaymentStatusDto } from './dto/update-payment-status.dto.js';
 
+import {
+    PaymentStatus,
+} from './entities/payment.entity.js';
+
 import { PaymentsService } from './payments.service.js';
 
 @Controller('payments')
@@ -31,6 +35,9 @@ export class PaymentsController {
         private readonly paymentsService: PaymentsService,
     ) { }
 
+    /**
+     * Cliente crea un pago pendiente.
+     */
     @Post('orders/:orderId')
     async createPayment(
         @Param(
@@ -48,6 +55,9 @@ export class PaymentsController {
         );
     }
 
+    /**
+     * Cliente consulta los pagos de su propia orden.
+     */
     @Get('orders/:orderId')
     async getOrderPayments(
         @Param(
@@ -63,6 +73,11 @@ export class PaymentsController {
         );
     }
 
+    /**
+     * Cliente consulta uno de sus propios pagos.
+     *
+     * El servicio valida ownership mediante order.user_id.
+     */
     @Get(':paymentId')
     async getPayment(
         @Param(
@@ -70,12 +85,17 @@ export class PaymentsController {
             new ParseUUIDPipe(),
         )
         paymentId: string,
+        @Req() request: AuthenticatedRequest,
     ) {
         return this.paymentsService.getPayment(
             paymentId,
+            request.user.sub,
         );
     }
 
+    /**
+     * Listado global de pagos para administración.
+     */
     @Get()
     @UseGuards(RolesGuard)
     @Roles(UserRole.ADMIN)
@@ -87,6 +107,11 @@ export class PaymentsController {
         );
     }
 
+    /**
+     * Confirma un pago pendiente.
+     *
+     * Solo ADMIN.
+     */
     @Patch(':paymentId/confirm')
     @UseGuards(RolesGuard)
     @Roles(UserRole.ADMIN)
@@ -96,11 +121,12 @@ export class PaymentsController {
             new ParseUUIDPipe(),
         )
         paymentId: string,
-        @Body()
-        dto: UpdatePaymentStatusDto,
+        @Body() dto: UpdatePaymentStatusDto,
         @Req() request: AuthenticatedRequest,
     ) {
-        if (dto.status !== 'PAID') {
+        if (
+            dto.status !== PaymentStatus.PAID
+        ) {
             throw new BadRequestException(
                 'Este endpoint solo permite confirmar pagos como PAID.',
             );
@@ -113,6 +139,12 @@ export class PaymentsController {
         );
     }
 
+    /**
+     * Marca un pago como fallido y libera
+     * las reservas de inventario.
+     *
+     * Solo ADMIN.
+     */
     @Patch(':paymentId/fail')
     @UseGuards(RolesGuard)
     @Roles(UserRole.ADMIN)
@@ -122,10 +154,11 @@ export class PaymentsController {
             new ParseUUIDPipe(),
         )
         paymentId: string,
-        @Body()
-        dto: UpdatePaymentStatusDto,
+        @Body() dto: UpdatePaymentStatusDto,
     ) {
-        if (dto.status !== 'FAILED') {
+        if (
+            dto.status !== PaymentStatus.FAILED
+        ) {
             throw new BadRequestException(
                 'Este endpoint solo permite marcar pagos como FAILED.',
             );
