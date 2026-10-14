@@ -12,15 +12,15 @@ import {
     UseGuards,
 } from '@nestjs/common';
 
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { Roles } from '../auth/decorators/roles.decorator.js';
-import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type.js';
-import { UserRole } from '../users/entities/user.entity.js';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard.js';
+import { RolesGuard } from '../../auth/guards/roles.guard.js';
+import { Roles } from '../../auth/decorators/roles.decorator.js';
+import type { AuthenticatedRequest } from '../../auth/types/authenticated-request.type.js';
+import { UserRole } from '../../users/entities/user.entity.js';
 
-import { CreateOrderDto } from './dto/create-order.dto.js';
-import { QueryOrdersDto } from './dto/query-orders.dto.js';
-import { OrdersService } from './orders.service.js';
+import { CreateOrderDto } from '../dto/create-order.dto.js';
+import { QueryOrdersDto } from '../dto/query-orders.dto.js';
+import { OrdersService } from '../services/orders.service.js';
 
 @Controller('orders')
 export class OrdersController {

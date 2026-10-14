@@ -8,16 +8,16 @@ import {
 import { DataSource, EntityManager } from 'typeorm';
 import { Decimal } from 'decimal.js';
 
-import { InventoryService } from '../inventory/inventory.service.js';
-import { ProductVariant } from '../products/entities/product-variant.entity.js';
-import { Order, OrderStatus } from './entities/order.entity.js';
-import { OrderItem } from '../order-items/entities/order-item.entity.js';
-import { CreateOrderDto } from './dto/create-order.dto.js';
-import { QueryOrdersDto } from './dto/query-orders.dto.js';
+import { InventoryService } from '../../inventory/inventory.service.js';
+import { ProductVariant } from '../../products/entities/product-variant.entity.js';
+import { Order, OrderStatus } from '../entities/order.entity.js';
+import { OrderItem } from '../../order-items/entities/order-item.entity.js';
+import { CreateOrderDto } from '../dto/create-order.dto.js';
+import { QueryOrdersDto } from '../dto/query-orders.dto.js';
 import {
     Payment,
     PaymentStatus,
-} from '../payments/entities/payment.entity.js';
+} from '../../payments/entities/payment.entity.js';
 
 @Injectable()
 export class OrdersService {
