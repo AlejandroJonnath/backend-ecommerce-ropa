@@ -13,6 +13,7 @@ import { ProductVariant } from '../products/entities/product-variant.entity.js';
 import { Order, OrderStatus } from './entities/order.entity.js';
 import { OrderItem } from '../order-items/entities/order-item.entity.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
+import { QueryOrdersDto } from './dto/query-orders.dto.js';
 import {
     Payment,
     PaymentStatus,
@@ -26,8 +27,7 @@ export class OrdersService {
     ) { }
 
     /**
-     * Crea una orden pendiente y reserva el inventario
-     * dentro de una transacción.
+     * Crea una orden pendiente y reserva su inventario.
      */
     async createOrder(
         userId: string,
@@ -39,9 +39,9 @@ export class OrdersService {
             const variantRepository =
                 manager.getRepository(ProductVariant);
 
-            // Combinamos variantes repetidas para evitar duplicados.
             const quantities = new Map<string, number>();
 
+            // Combina las variantes repetidas en una sola línea.
             for (const item of dto.items) {
                 const current =
                     quantities.get(item.productVariantId) ?? 0;
@@ -57,7 +57,7 @@ export class OrdersService {
                 quantities.set(item.productVariantId, next);
             }
 
-            // Todas las operaciones bloquean variantes en el mismo orden.
+            // Bloquea las variantes en un orden consistente.
             const requestedItems = [...quantities.entries()]
                 .map(([productVariantId, quantity]) => ({
                     productVariantId,
@@ -114,7 +114,6 @@ export class OrdersService {
                 );
 
                 const unitCost = new Decimal(variant.cost);
-
                 const itemSubtotal = unitPrice.mul(item.quantity);
 
                 subtotal = subtotal.plus(itemSubtotal);
@@ -145,7 +144,6 @@ export class OrdersService {
                 discount: discount.toFixed(2),
                 shippingCost: shippingCost.toFixed(2),
                 total: total.toFixed(2),
-
                 shippingRecipientName:
                     dto.shippingRecipientName.trim(),
                 shippingPhone: dto.shippingPhone.trim(),
@@ -188,10 +186,79 @@ export class OrdersService {
     }
 
     /**
-     * Cancela una orden pendiente del cliente autenticado.
+     * Obtiene el historial de órdenes del cliente autenticado.
+     */
+    async getMyOrders(
+        userId: string,
+        query: QueryOrdersDto,
+    ) {
+        const page = query.page ?? 1;
+        const limit = query.limit ?? 20;
+        const skip = (page - 1) * limit;
+
+        const queryBuilder = this.dataSource
+            .getRepository(Order)
+            .createQueryBuilder('order')
+            .leftJoinAndSelect('order.items', 'items')
+            .where('order.user_id = :userId', { userId });
+
+        if (query.status) {
+            queryBuilder.andWhere(
+                'order.status = :status',
+                { status: query.status },
+            );
+        }
+
+        queryBuilder
+            .orderBy('order.created_at', 'DESC')
+            .addOrderBy('order.id', 'DESC')
+            .skip(skip)
+            .take(limit);
+
+        const [orders, total] =
+            await queryBuilder.getManyAndCount();
+
+        return {
+            data: orders,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit),
+                hasNextPage: page < Math.ceil(total / limit),
+                hasPreviousPage: page > 1,
+            },
+        };
+    }
+
+    /**
+     * Obtiene el detalle de una orden del cliente autenticado.
      *
-     * La orden, sus pagos pendientes y las reservas se
-     * actualizan en una sola transacción.
+     * El filtro por usuario se aplica en la consulta SQL.
+     */
+    async getMyOrder(
+        orderId: string,
+        userId: string,
+    ): Promise<Order> {
+        const order = await this.dataSource
+            .getRepository(Order)
+            .createQueryBuilder('order')
+            .leftJoinAndSelect('order.items', 'items')
+            .where('order.id = :orderId', { orderId })
+            .andWhere('order.user_id = :userId', { userId })
+            .getOne();
+
+        if (!order) {
+            throw new NotFoundException(
+                'La orden no existe.',
+            );
+        }
+
+        return order;
+    }
+
+    /**
+     * Cancela una orden pendiente del cliente autenticado.
      */
     async cancelOrder(
         orderId: string,
@@ -202,8 +269,6 @@ export class OrdersService {
             const itemRepository = manager.getRepository(OrderItem);
             const paymentRepository = manager.getRepository(Payment);
 
-            // Bloqueamos primero la orden para serializar operaciones
-            // concurrentes sobre el mismo pedido.
             const order = await orderRepository
                 .createQueryBuilder('order')
                 .setLock('pessimistic_write')
@@ -240,14 +305,11 @@ export class OrdersService {
                 );
             }
 
-            // Mantener el orden de locks consistente evita muchos
-            // deadlocks cuando varias órdenes comparten variantes.
             items.sort((a, b) =>
                 a.productVariantId.localeCompare(b.productVariantId),
             );
 
-            // Verificamos que exista suficiente reserva antes de
-            // empezar a modificar el inventario.
+            // Validamos todas las reservas antes de modificarlas.
             for (const item of items) {
                 const variant = await manager
                     .getRepository(ProductVariant)
@@ -272,7 +334,6 @@ export class OrdersService {
                 }
             }
 
-            // Liberamos las reservas. El stock físico no cambia.
             for (const item of items) {
                 await this.inventoryService.releaseReservedStock(
                     manager,
@@ -281,7 +342,7 @@ export class OrdersService {
                 );
             }
 
-            // Una orden cancelada no debe conservar pagos pendientes.
+            // Los pagos pendientes se invalidan dentro de la misma transacción.
             const pendingPayments = await paymentRepository.find({
                 where: {
                     orderId: order.id,
@@ -310,7 +371,7 @@ export class OrdersService {
     }
 
     /**
-     * Recupera una orden con sus productos dentro
+     * Recupera una orden con sus líneas dentro
      * de la transacción actual.
      */
     private async getOrderWithItems(

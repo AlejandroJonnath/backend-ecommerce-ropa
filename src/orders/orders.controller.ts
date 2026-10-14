@@ -2,10 +2,12 @@
 import {
     Body,
     Controller,
+    Get,
     Param,
     ParseUUIDPipe,
     Patch,
     Post,
+    Query,
     Req,
     UseGuards,
 } from '@nestjs/common';
@@ -17,6 +19,7 @@ import type { AuthenticatedRequest } from '../auth/types/authenticated-request.t
 import { UserRole } from '../users/entities/user.entity.js';
 
 import { CreateOrderDto } from './dto/create-order.dto.js';
+import { QueryOrdersDto } from './dto/query-orders.dto.js';
 import { OrdersService } from './orders.service.js';
 
 @Controller('orders')
@@ -24,6 +27,43 @@ export class OrdersController {
     constructor(
         private readonly ordersService: OrdersService,
     ) { }
+
+    /**
+     * Historial del cliente autenticado.
+     *
+     * Ejemplo:
+     * GET /orders/me?page=1&limit=20
+     */
+    @Get('me')
+    @UseGuards(JwtAuthGuard)
+    async getMyOrders(
+        @Req() request: AuthenticatedRequest,
+        @Query() query: QueryOrdersDto,
+    ) {
+        return this.ordersService.getMyOrders(
+            request.user.sub,
+            query,
+        );
+    }
+
+    /**
+     * Detalle de una orden propia.
+     */
+    @Get('me/:orderId')
+    @UseGuards(JwtAuthGuard)
+    async getMyOrder(
+        @Param(
+            'orderId',
+            new ParseUUIDPipe(),
+        )
+        orderId: string,
+        @Req() request: AuthenticatedRequest,
+    ) {
+        return this.ordersService.getMyOrder(
+            orderId,
+            request.user.sub,
+        );
+    }
 
     /**
      * Crea una orden para el cliente autenticado.
@@ -41,7 +81,7 @@ export class OrdersController {
     }
 
     /**
-     * Cancela una orden pendiente perteneciente al cliente.
+     * Cancela una orden pendiente propia.
      */
     @Patch(':orderId/cancel')
     @UseGuards(JwtAuthGuard)
